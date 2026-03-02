@@ -1,4 +1,4 @@
-import streamimport streamlit as st
+import streamlit as st
 import yfinance as yf
 
 st.title("🐋 Radar de Ballenas")
