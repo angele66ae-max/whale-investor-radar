@@ -1,4 +1,6 @@
-streamlit
-yfinance
+streamlit==1.54.0
+alpaca-trade-api==0.48
 pandas
-alpaca-trade-api
+yfinance
+requests>=2.31.0
+urllib3>=2.0.0
