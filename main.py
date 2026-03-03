@@ -1,7 +1,7 @@
 import streamlit as st
 import requests
 
-st.title("Conexión a Alpaca (sin SDK)")
+st.title("Conexión a Alpaca (Paper)")
 
 API_KEY = st.secrets["ALPACA_API_KEY"]
 SECRET_KEY = st.secrets["ALPACA_SECRET_KEY"]
@@ -16,10 +16,9 @@ headers = {
 response = requests.get(url, headers=headers)
 
 if response.status_code == 200:
-    data = response.json()
     st.success("Conectado correctamente a Alpaca 🎉")
-    st.write("Estado de cuenta:")
-    st.write(data)
+    st.write(response.json())
 else:
-    st.error("Error al conectar con Alpaca")
+    st.error("Error al conectar")
+    st.write(response.status_code)
     st.write(response.text)
