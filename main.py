@@ -1,2 +1,4 @@
 import streamlit as st
-st.write("Hola, si ves esto, el problema no es el código, sino la conexión con Alpaca.")
+
+st.title("Prueba básica")
+st.write("Si ves esto, Streamlit funciona.")
