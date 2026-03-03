@@ -1,4 +1,4 @@
 import streamlit as st
 
-st.title("Prueba básica")
+st.title("PRUEBA BASICA")
 st.write("Si ves esto, Streamlit funciona.")
