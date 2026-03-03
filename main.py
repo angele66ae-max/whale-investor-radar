@@ -164,3 +164,67 @@ elif last_signal == -1:
     st.error("🔴 Señal actual: VENTA")
 else:
     st.warning("⚪ Sin señal clara")
+import requests
+import json
+
+st.markdown("---")
+st.header("Trading en Vivo (Paper)")
+
+API_KEY = st.secrets["ALPACA_API_KEY"]
+SECRET_KEY = st.secrets["ALPACA_SECRET_KEY"]
+
+BASE_URL = "https://paper-api.alpaca.markets"
+
+headers = {
+    "APCA-API-KEY-ID": API_KEY,
+    "APCA-API-SECRET-KEY": SECRET_KEY,
+    "Content-Type": "application/json"
+}
+
+# --- Obtener cuenta ---
+account = requests.get(f"{BASE_URL}/v2/account", headers=headers).json()
+
+col1, col2, col3 = st.columns(3)
+
+col1.metric("💰 Portfolio", f"${float(account['portfolio_value']):,.2f}")
+col2.metric("💵 Cash", f"${float(account['cash']):,.2f}")
+col3.metric("⚡ Buying Power", f"${float(account['buying_power']):,.2f}")
+
+st.markdown("---")
+
+qty = st.number_input("Cantidad de acciones", min_value=1, value=1)
+
+col_buy, col_sell = st.columns(2)
+
+# --- FUNCION ORDEN ---
+def enviar_orden(side):
+    order_data = {
+        "symbol": symbol,
+        "qty": qty,
+        "side": side,
+        "type": "market",
+        "time_in_force": "gtc"
+    }
+
+    response = requests.post(
+        f"{BASE_URL}/v2/orders",
+        headers=headers,
+        data=json.dumps(order_data)
+    )
+
+    return response
+
+# --- BOTONES ---
+if col_buy.button("🟢 COMPRAR"):
+    r = enviar_orden("buy")
+    if r.status_code == 200:
+        st.success("Orden de COMPRA enviada 🚀")
+    else:
+        st.error(r.text)
+
+if col_sell.button("🔴 VENDER"):
+    r = enviar_orden("sell")
+    if r.status_code == 200:
+        st.success("Orden de VENTA enviada 🚀")
+    else:
+        st.error(r.text)
