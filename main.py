@@ -2,29 +2,33 @@ import streamlit as st
 import yfinance as yf
 from alpaca_trade_api.rest import REST
 
-# Sacamos las llaves de la "caja fuerte"
+# Sacar llaves de Secrets
 API_KEY = st.secrets["ALPACA_API_KEY"]
 SECRET_KEY = st.secrets["ALPACA_SECRET_KEY"]
 BASE_URL = st.secrets["ALPACA_BASE_URL"]
 
-# Conexión con Alpaca
+# Conectar Alpaca
 alpaca = REST(API_KEY, SECRET_KEY, BASE_URL)
 
-st.title("🤖 Mi IA Inversora")
+st.title("🤖 IA Trader: Alpaca Pro")
 
-# Selector de activo
-ticker = st.selectbox("¿Qué quieres comprar?", ["NVDA", "AAPL", "TSLA"])
+# Escáner simple
+ticker = st.text_input("Empresa para analizar (ej: NVDA):", "NVDA").upper()
 
-if st.button("🚀 INVERTIR AHORA"):
+if st.button("Analizar y Comprar"):
+    data = yf.Ticker(ticker).history(period="1d")
+    precio = data['Close'][-1]
+    st.write(f"Precio actual: ${precio:.2f}")
+    
     try:
         alpaca.submit_order(
-            symbol=ticker,
+            symbol=ticker.replace("-USD", ""),
             qty=1,
             side='buy',
             type='market',
             time_in_force='gtc'
         )
-        st.success(f"¡Orden enviada! Compraste 1 de {ticker} en Alpaca.")
+        st.success(f"✅ ¡Compra de {ticker} hecha en Alpaca!")
         st.balloons()
     except Exception as e:
         st.error(f"Error: {e}")
