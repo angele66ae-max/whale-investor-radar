@@ -178,39 +178,106 @@ if col_sell.button("🔴 VENDER", key="sell"):
         st.error(r.text)
 # ------------------ BOT AUTOMÁTICO ------------------
 
+# ------------------ BOT PROFESIONAL MULTI-SYMBOL ------------------
+
 st.markdown("---")
-st.header("🤖 Modo Bot Automático")
+st.header("🤖 Bot Profesional Inteligente")
 
-bot_activo = st.toggle("Activar Bot", key="bot_toggle")
+bot_activo = st.toggle("Activar Bot Inteligente", key="bot_pro")
 
-def hay_posicion_abierta():
+riesgo_pct = st.slider("Riesgo por operación (%)", 0.5, 5.0, 1.0, key="riesgo_pct")
+
+lista_simbolos = st.text_input(
+    "Símbolos para escanear (separados por coma)",
+    "AAPL,MSFT,TSLA,NVDA,AMZN",
+    key="scanner_symbols"
+)
+
+# ------------------ FUNCIONES BOT ------------------
+
+def obtener_equity():
+    r = requests.get(f"{BASE_URL}/v2/account", headers=headers)
+    return float(r.json()["equity"])
+
+def obtener_posiciones():
     r = requests.get(f"{BASE_URL}/v2/positions", headers=headers)
-    posiciones = r.json()
-    return len(posiciones) > 0
+    return r.json()
 
-def ejecutar_bot():
-    if len(data) < 2:
+def hay_posicion_en(simbolo):
+    posiciones = obtener_posiciones()
+    for p in posiciones:
+        if p["symbol"] == simbolo:
+            return True
+    return False
+
+def calcular_qty(precio, sl_pct):
+    equity = obtener_equity()
+    riesgo_total = equity * (riesgo_pct / 100)
+    riesgo_por_accion = precio * (sl_pct / 100)
+    qty = int(riesgo_total / riesgo_por_accion)
+    return max(qty, 1)
+
+def evaluar_y_operar(simbolo):
+
+    data_scan = yf.download(simbolo, period="5d", interval="15m")
+
+    if len(data_scan) < 30:
         return
 
-    ema9_actual = data["EMA9"].iloc[-1]
-    ema21_actual = data["EMA21"].iloc[-1]
-    rsi_actual = data["RSI"].iloc[-1]
+    data_scan["EMA9"] = data_scan["Close"].ewm(span=9).mean()
+    data_scan["EMA21"] = data_scan["Close"].ewm(span=21).mean()
 
-    posicion_abierta = hay_posicion_abierta()
+    delta = data_scan["Close"].diff()
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
+    rs = gain.rolling(14).mean() / loss.rolling(14).mean()
+    data_scan["RSI"] = 100 - (100 / (1 + rs))
 
-    # CONDICION COMPRA
-    if ema9_actual > ema21_actual and rsi_actual > 50 and not posicion_abierta:
-        st.warning("🤖 BOT: Detectada señal de COMPRA")
-        r = enviar_orden("buy")
-        if r.status_code == 200:
-            st.success("🤖 BOT ejecutó COMPRA")
+    ema9 = data_scan["EMA9"].iloc[-1]
+    ema21 = data_scan["EMA21"].iloc[-1]
+    rsi = data_scan["RSI"].iloc[-1]
+    precio = float(data_scan["Close"].iloc[-1])
 
-    # CONDICION VENTA
-    elif ema9_actual < ema21_actual and rsi_actual < 50 and posicion_abierta:
-        st.warning("🤖 BOT: Detectada señal de VENTA")
-        r = enviar_orden("sell")
-        if r.status_code == 200:
-            st.success("🤖 BOT ejecutó VENTA")
+    if not hay_posicion_en(simbolo):
+
+        if ema9 > ema21 and rsi > 50:
+
+            qty_auto = calcular_qty(precio, stop_loss_pct)
+
+            st.warning(f"🤖 BUY detectado en {simbolo} | Qty: {qty_auto}")
+
+            order_data = {
+                "symbol": simbolo,
+                "qty": qty_auto,
+                "side": "buy",
+                "type": "market",
+                "time_in_force": "gtc",
+                "order_class": "bracket",
+                "take_profit": {
+                    "limit_price": round(precio * (1 + take_profit_pct/100), 2)
+                },
+                "stop_loss": {
+                    "stop_price": round(precio * (1 - stop_loss_pct/100), 2)
+                }
+            }
+
+            r = requests.post(
+                f"{BASE_URL}/v2/orders",
+                headers=headers,
+                json=order_data
+            )
+
+            if r.status_code == 200:
+                st.success(f"🤖 BOT ejecutó BUY en {simbolo}")
+            else:
+                st.error(r.text)
+
+# ------------------ EJECUCIÓN ------------------
 
 if bot_activo:
-    ejecutar_bot()
+
+    simbolos = [s.strip().upper() for s in lista_simbolos.split(",")]
+
+    for s in simbolos:
+        evaluar_y_operar(s)
+
