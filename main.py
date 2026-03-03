@@ -176,3 +176,41 @@ if col_sell.button("🔴 VENDER", key="sell"):
         st.success("Orden SELL con SL/TP enviada 🚀")
     else:
         st.error(r.text)
+# ------------------ BOT AUTOMÁTICO ------------------
+
+st.markdown("---")
+st.header("🤖 Modo Bot Automático")
+
+bot_activo = st.toggle("Activar Bot", key="bot_toggle")
+
+def hay_posicion_abierta():
+    r = requests.get(f"{BASE_URL}/v2/positions", headers=headers)
+    posiciones = r.json()
+    return len(posiciones) > 0
+
+def ejecutar_bot():
+    if len(data) < 2:
+        return
+
+    ema9_actual = data["EMA9"].iloc[-1]
+    ema21_actual = data["EMA21"].iloc[-1]
+    rsi_actual = data["RSI"].iloc[-1]
+
+    posicion_abierta = hay_posicion_abierta()
+
+    # CONDICION COMPRA
+    if ema9_actual > ema21_actual and rsi_actual > 50 and not posicion_abierta:
+        st.warning("🤖 BOT: Detectada señal de COMPRA")
+        r = enviar_orden("buy")
+        if r.status_code == 200:
+            st.success("🤖 BOT ejecutó COMPRA")
+
+    # CONDICION VENTA
+    elif ema9_actual < ema21_actual and rsi_actual < 50 and posicion_abierta:
+        st.warning("🤖 BOT: Detectada señal de VENTA")
+        r = enviar_orden("sell")
+        if r.status_code == 200:
+            st.success("🤖 BOT ejecutó VENTA")
+
+if bot_activo:
+    ejecutar_bot()
