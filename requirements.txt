@@ -1,3 +1,4 @@
 streamlit
 yfinance
 pandas
+alpaca-trade-api
