@@ -2,39 +2,42 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 
-st.set_page_config(page_title="IA Inversora Pro", page_icon="🤖")
+st.set_page_config(page_title="IA Wealth Master", page_icon="💰")
 
-st.title("🤖 IA de Selección de Activos")
-st.markdown("---")
+st.title("💰 IA de Estrategia de Inversión")
 
-# 1. Función para que la IA califique una inversión
-def analizar_activo(ticker):
-    try:
-        data = yf.Ticker(ticker)
-        hist = data.history(period="1mo")
-        # Calculamos rendimiento del último mes
-        rendimiento = ((hist['Close'][-1] - hist['Close'][0]) / hist['Close'][0]) * 100
-        return round(rendimiento, 2)
-    except:
-        return None
+# Lista expandida de activos rentables
+activos = {
+    "Acciones Top": ["NVDA", "TSLA", "AAPL", "MSFT", "AMZN", "META"],
+    "Criptomonedas": ["BTC-USD", "ETH-USD", "SOL-USD", "DOGE-USD", "BNB-USD"],
+    "Materias Primas": ["GC=F", "CL=F"] # Oro y Petróleo
+}
 
-# 2. Panel de Control de la IA
-st.subheader("🚀 Radar de Rentabilidad Automático")
-activos_a_monitorear = ["NVDA", "AAPL", "TSLA", "BTC-USD", "ETH-USD", "SOL-USD", "MSFT"]
+st.sidebar.header("Configuración de la IA")
+categoria = st.sidebar.selectbox("Selecciona Mercado", list(activos.keys()))
 
-if st.button("Escanear Mercado ahora"):
+if st.button(f"Analizar Rentabilidad de {categoria}"):
     resultados = []
-    for a in activos_a_monitorear:
-        score = analizar_activo(a)
-        if score is not None:
-            resultados.append({"Activo": a, "Rendimiento Mes (%)": score})
+    with st.spinner('La IA está escaneando el mercado...'):
+        for ticker in activos[categoria]:
+            data = yf.Ticker(ticker).history(period="1mo")
+            if not data.empty:
+                cambio = ((data['Close'][-1] - data['Close'][0]) / data['Close'][0]) * 100
+                precio_actual = data['Close'][-1]
+                # Lógica simple de IA: Si subió más de 5%, es 'Compra Fuerte'
+                señal = "COMPRA" if cambio > 5 else "MANTENER" if cambio > 0 else "VENTA"
+                
+                resultados.append({
+                    "Símbolo": ticker,
+                    "Precio": round(precio_actual, 2),
+                    "Rendimiento (%)": round(cambio, 2),
+                    "Recomendación IA": señal
+                })
     
-    df_ranking = pd.DataFrame(resultados).sort_values(by="Rendimiento Mes (%)", ascending=False)
+    df = pd.DataFrame(resultados).sort_values(by="Rendimiento (%)", ascending=False)
+    st.table(df)
     
-    # La IA recomienda el mejor
-    mejor = df_ranking.iloc[0]
-    st.success(f"✅ La IA recomienda: **{mejor['Activo']}** con un {mejor['Rendimiento Mes (%)']}% este mes.")
-    st.table(df_ranking)
+    mejor = df.iloc[0]
+    st.success(f"🌟 La IA detectó la mayor oportunidad en: **{mejor['Símbolo']}**")
 
-st.markdown("---")
-st.info("⚠️ Nota: Para que la IA invierta sola (Trading Automático), necesitaríamos conectar una cuenta de un Broker (como Binance o Alpaca) mediante una 'API Key'. Eso es el siguiente paso después de tener el radar listo.")
+st.warning("⚠️ Para activar la 'Inversión Automática', necesitamos conectar una API de Binance, Bitso o Interactive Brokers.")
