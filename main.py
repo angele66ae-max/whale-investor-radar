@@ -1,40 +1,30 @@
 import streamlit as st
 import yfinance as yf
-import pandas as pd
+from alpaca_trade_api.rest import REST
 
-st.set_page_config(page_title="IA Inversora Pro", page_icon="🤖")
+# Sacamos las llaves de la "caja fuerte"
+API_KEY = st.secrets["ALPACA_API_KEY"]
+SECRET_KEY = st.secrets["ALPACA_SECRET_KEY"]
+BASE_URL = st.secrets["ALPACA_BASE_URL"]
 
-st.title("🤖 IA de Selección de Activos")
-st.markdown("---")
+# Conexión con Alpaca
+alpaca = REST(API_KEY, SECRET_KEY, BASE_URL)
 
-# 1. Función para que la IA califique una inversión
-def analizar_activo(ticker):
+st.title("🤖 Mi IA Inversora")
+
+# Selector de activo
+ticker = st.selectbox("¿Qué quieres comprar?", ["NVDA", "AAPL", "TSLA"])
+
+if st.button("🚀 INVERTIR AHORA"):
     try:
-        data = yf.Ticker(ticker)
-        hist = data.history(period="1mo")
-        # Calculamos rendimiento del último mes
-        rendimiento = ((hist['Close'][-1] - hist['Close'][0]) / hist['Close'][0]) * 100
-        return round(rendimiento, 2)
-    except:
-        return None
-
-# 2. Panel de Control de la IA
-st.subheader("🚀 Radar de Rentabilidad Automático")
-activos_a_monitorear = ["NVDA", "AAPL", "TSLA", "BTC-USD", "ETH-USD", "SOL-USD", "MSFT"]
-
-if st.button("Escanear Mercado ahora"):
-    resultados = []
-    for a in activos_a_monitorear:
-        score = analizar_activo(a)
-        if score is not None:
-            resultados.append({"Activo": a, "Rendimiento Mes (%)": score})
-    
-    df_ranking = pd.DataFrame(resultados).sort_values(by="Rendimiento Mes (%)", ascending=False)
-    
-    # La IA recomienda el mejor
-    mejor = df_ranking.iloc[0]
-    st.success(f"✅ La IA recomienda: **{mejor['Activo']}** con un {mejor['Rendimiento Mes (%)']}% este mes.")
-    st.table(df_ranking)
-
-st.markdown("---")
-st.info("⚠️ Nota: Para que la IA invierta sola (Trading Automático), necesitaríamos conectar una cuenta de un Broker (como Binance o Alpaca) mediante una 'API Key'. Eso es el siguiente paso después de tener el radar listo.")
+        alpaca.submit_order(
+            symbol=ticker,
+            qty=1,
+            side='buy',
+            type='market',
+            time_in_force='gtc'
+        )
+        st.success(f"¡Orden enviada! Compraste 1 de {ticker} en Alpaca.")
+        st.balloons()
+    except Exception as e:
+        st.error(f"Error: {e}")
