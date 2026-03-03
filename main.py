@@ -1,43 +1,34 @@
 import streamlit as st
 import yfinance as yf
-import pandas as pd
+from alpaca_trade_api.rest import REST
 
-st.set_page_config(page_title="IA Wealth Master", page_icon="💰")
+# Esto saca las llaves de la "caja fuerte" que configuraste arriba
+API_KEY = st.secrets["ALPACA_API_KEY"]
+SECRET_KEY = st.secrets["ALPACA_SECRET_KEY"]
+BASE_URL = st.secrets["ALPACA_BASE_URL"]
 
-st.title("💰 IA de Estrategia de Inversión")
+# Conectamos con Alpaca
+alpaca = REST(API_KEY, SECRET_KEY, BASE_URL)
 
-# Lista expandida de activos rentables
-activos = {
-    "Acciones Top": ["NVDA", "TSLA", "AAPL", "MSFT", "AMZN", "META"],
-    "Criptomonedas": ["BTC-USD", "ETH-USD", "SOL-USD", "DOGE-USD", "BNB-USD"],
-    "Materias Primas": ["GC=F", "CL=F"] # Oro y Petróleo
-}
+st.title("🤖 Mi IA Inversora")
 
-st.sidebar.header("Configuración de la IA")
-categoria = st.sidebar.selectbox("Selecciona Mercado", list(activos.keys()))
+# Elegimos qué comprar
+ticker = st.selectbox("¿Qué quieres que compre la IA?", ["NVDA", "AAPL", "BTC-USD", "ETH-USD"])
 
-if st.button(f"Analizar Rentabilidad de {categoria}"):
-    resultados = []
-    with st.spinner('La IA está escaneando el mercado...'):
-        for ticker in activos[categoria]:
-            data = yf.Ticker(ticker).history(period="1mo")
-            if not data.empty:
-                cambio = ((data['Close'][-1] - data['Close'][0]) / data['Close'][0]) * 100
-                precio_actual = data['Close'][-1]
-                # Lógica simple de IA: Si subió más de 5%, es 'Compra Fuerte'
-                señal = "COMPRA" if cambio > 5 else "MANTENER" if cambio > 0 else "VENTA"
-                
-                resultados.append({
-                    "Símbolo": ticker,
-                    "Precio": round(precio_actual, 2),
-                    "Rendimiento (%)": round(cambio, 2),
-                    "Recomendación IA": señal
-                })
-    
-    df = pd.DataFrame(resultados).sort_values(by="Rendimiento (%)", ascending=False)
-    st.table(df)
-    
-    mejor = df.iloc[0]
-    st.success(f"🌟 La IA detectó la mayor oportunidad en: **{mejor['Símbolo']}**")
-
-st.warning("⚠️ Para activar la 'Inversión Automática', necesitamos conectar una API de Binance, Bitso o Interactive Brokers.")
+if st.button("🚀 EJECUTAR COMPRA"):
+    try:
+        # Enviamos la orden de compra a Alpaca
+        # Nota: Para cripto en Alpaca se quita el "-USD"
+        simbolo_limpio = ticker.replace("-USD", "")
+        
+        alpaca.submit_order(
+            symbol=simbolo_limpio,
+            qty=1, # Compra 1 unidad
+            side='buy',
+            type='market',
+            time_in_force='gtc'
+        )
+        st.balloons()
+        st.success(f"¡Éxito! Compramos 1 unidad de {simbolo_limpio} en Alpaca.")
+    except Exception as e:
+        st.error(f"Algo salió mal: {e}")
