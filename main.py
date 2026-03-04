@@ -54,3 +54,4 @@ account = trading_client.get_account()
 buying_power = float(account.buying_power)
 
 st.metric("💰 Buying Power", f"${buying_power:,.2f}")
+st.write(data.tail())
