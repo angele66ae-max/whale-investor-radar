@@ -1,283 +1,119 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
-import requests
-import json
+import numpy as np
+from alpaca.trading.client import TradingClient
+from alpaca.trading.requests import MarketOrderRequest
+from alpaca.trading.enums import OrderSide, TimeInForce, OrderType
 
 # ------------------ CONFIG ------------------
-st.set_page_config(layout="wide")
-st.title("Angel Trader PRO 🔥")
-
-# ------------------ SECRETS ------------------
-API_KEY = st.secrets["ALPACA_API_KEY"]
-SECRET_KEY = st.secrets["ALPACA_SECRET_KEY"]
-
+API_KEY = "TU_API_KEY"
+SECRET_KEY = "TU_SECRET_KEY"
 BASE_URL = "https://paper-api.alpaca.markets"
 
-headers = {
-    "APCA-API-KEY-ID": API_KEY,
-    "APCA-API-SECRET-KEY": SECRET_KEY,
-    "Content-Type": "application/json"
-}
+trading_client = TradingClient(API_KEY, SECRET_KEY, paper=True)
+
+st.set_page_config(page_title="Whale Investor Radar PRO", layout="wide")
+
+st.title("🐋 Whale Investor Radar PRO")
 
 # ------------------ SIDEBAR ------------------
-symbol = st.sidebar.text_input("Símbolo", "AAPL", key="symbol")
-interval = st.sidebar.selectbox("Timeframe", ["5m", "15m", "1h", "1d"], key="interval")
 
-if interval in ["5m", "15m"]:
-    period = "5d"
-elif interval == "1h":
-    period = "1mo"
-else:
-    period = "6mo"
+symbol = st.sidebar.text_input("Símbolo", value="AAPL", key="symbol_input")
+risk_percent = st.sidebar.slider("Riesgo por operación (%)", 1, 20, 10)
+take_profit_percent = st.sidebar.slider("Take Profit (%)", 1, 20, 5)
+stop_loss_percent = st.sidebar.slider("Stop Loss (%)", 1, 20, 3)
 
 # ------------------ DATOS ------------------
-data = yf.download(tickers=symbol, period=period, interval=interval)
 
-# ------------------ INDICADORES ------------------
-data["EMA9"] = data["Close"].ewm(span=9).mean()
-data["EMA21"] = data["Close"].ewm(span=21).mean()
+data = yf.download(symbol, period="1mo", interval="1h")
 
-delta = data["Close"].diff()
-gain = delta.clip(lower=0)
-loss = -delta.clip(upper=0)
+if data.empty:
+    st.error("Símbolo inválido")
+    st.stop()
 
-avg_gain = gain.rolling(14).mean()
-avg_loss = loss.rolling(14).mean()
+data["EMA20"] = data["Close"].ewm(span=20).mean()
+data["EMA50"] = data["Close"].ewm(span=50).mean()
+data["Volume_MA"] = data["Volume"].rolling(20).mean()
 
-rs = avg_gain / avg_loss
-data["RSI"] = 100 - (100 / (1 + rs))
+# Whale detection
+data["Whale"] = data["Volume"] > data["Volume_MA"] * 2
 
-data["Signal"] = 0
-data.loc[data["EMA9"] > data["EMA21"], "Signal"] = 1
-data.loc[data["EMA9"] < data["EMA21"], "Signal"] = -1
+st.line_chart(data[["Close", "EMA20", "EMA50"]])
 
-# ------------------ GRAFICO ------------------
-fig = make_subplots(
-    rows=2,
-    cols=1,
-    shared_xaxes=True,
-    row_heights=[0.7, 0.3],
-    vertical_spacing=0.05
-)
+if data["Whale"].iloc[-1]:
+    st.success("🐋 Posible movimiento de ballena detectado")
 
-fig.add_trace(go.Candlestick(
-    x=data.index,
-    open=data["Open"],
-    high=data["High"],
-    low=data["Low"],
-    close=data["Close"],
-    name="Precio"
-), row=1, col=1)
+# ------------------ SEÑAL ------------------
 
-fig.add_trace(go.Scatter(
-    x=data.index,
-    y=data["EMA9"],
-    name="EMA 9"
-), row=1, col=1)
-
-fig.add_trace(go.Scatter(
-    x=data.index,
-    y=data["EMA21"],
-    name="EMA 21"
-), row=1, col=1)
-
-fig.add_trace(go.Scatter(
-    x=data.index,
-    y=data["RSI"],
-    name="RSI"
-), row=2, col=1)
-
-fig.add_hline(y=70, line_dash="dash", row=2, col=1)
-fig.add_hline(y=30, line_dash="dash", row=2, col=1)
-
-fig.update_layout(
-    template="plotly_dark",
-    xaxis_rangeslider_visible=False,
-    height=800
-)
-
-st.plotly_chart(fig, use_container_width=True)
-
-# ------------------ SEÑAL ACTUAL ------------------
-last_signal = data["Signal"].iloc[-1]
-
-if last_signal == 1:
-    st.success("🟢 Señal actual: COMPRA")
-elif last_signal == -1:
-    st.error("🔴 Señal actual: VENTA")
-else:
-    st.warning("⚪ Sin señal clara")
+buy_signal = data["EMA20"].iloc[-1] > data["EMA50"].iloc[-1]
+sell_signal = data["EMA20"].iloc[-1] < data["EMA50"].iloc[-1]
 
 # ------------------ CUENTA ------------------
-st.markdown("---")
-st.header("Trading en Vivo (Paper)")
 
-account = requests.get(f"{BASE_URL}/v2/account", headers=headers).json()
+account = trading_client.get_account()
+buying_power = float(account.buying_power)
 
-col1, col2, col3 = st.columns(3)
+st.metric("💰 Buying Power", f"${buying_power:,.2f}")
 
-col1.metric("💰 Portfolio", f"${float(account['portfolio_value']):,.2f}")
-col2.metric("💵 Cash", f"${float(account['cash']):,.2f}")
-col3.metric("⚡ Buying Power", f"${float(account['buying_power']):,.2f}")
+capital_to_use = buying_power * (risk_percent / 100)
 
-# ------------------ ORDENES ------------------
-st.markdown("---")
+# ------------------ BOT ------------------
 
-qty = st.number_input("Cantidad de acciones", min_value=1, value=1, key="qty")
-stop_loss_pct = st.number_input("Stop Loss (%)", min_value=0.1, value=1.0, key="sl")
-take_profit_pct = st.number_input("Take Profit (%)", min_value=0.1, value=2.0, key="tp")
+if st.button("🚀 Activar Bot Automático"):
 
-def enviar_orden(side):
-    last_price = float(data["Close"].iloc[-1])
-
-    if side == "buy":
-        stop_price = round(last_price * (1 - stop_loss_pct/100), 2)
-        take_price = round(last_price * (1 + take_profit_pct/100), 2)
+    if buying_power < 50:
+        st.warning("⚠️ No hay suficiente poder adquisitivo")
     else:
-        stop_price = round(last_price * (1 + stop_loss_pct/100), 2)
-        take_price = round(last_price * (1 - take_profit_pct/100), 2)
 
-    order_data = {
-        "symbol": symbol,
-        "qty": qty,
-        "side": side,
-        "type": "market",
-        "time_in_force": "gtc",
-        "order_class": "bracket",
-        "take_profit": {
-            "limit_price": take_price
-        },
-        "stop_loss": {
-            "stop_price": stop_price
-        }
-    }
+        if buy_signal:
 
-    return requests.post(
-        f"{BASE_URL}/v2/orders",
-        headers=headers,
-        json=order_data
-    )
-
-col_buy, col_sell = st.columns(2)
-
-if col_buy.button("🟢 COMPRAR", key="buy"):
-    r = enviar_orden("buy")
-    if r.status_code == 200:
-        st.success("Orden BUY con SL/TP enviada 🚀")
-    else:
-        st.error(r.text)
-
-if col_sell.button("🔴 VENDER", key="sell"):
-    r = enviar_orden("sell")
-    if r.status_code == 200:
-        st.success("Orden SELL con SL/TP enviada 🚀")
-    else:
-        st.error(r.text)
-# ------------------ BOT AUTOMÁTICO ------------------
-
-# ------------------ BOT PROFESIONAL MULTI-SYMBOL ------------------
-
-st.markdown("---")
-st.header("🤖 Bot Profesional Inteligente")
-
-bot_activo = st.toggle("Activar Bot Inteligente", key="bot_pro")
-
-riesgo_pct = st.slider("Riesgo por operación (%)", 0.5, 5.0, 1.0, key="riesgo_pct")
-
-lista_simbolos = st.text_input(
-    "Símbolos para escanear (separados por coma)",
-    "AAPL,MSFT,TSLA,NVDA,AMZN",
-    key="scanner_symbols"
-)
-
-# ------------------ FUNCIONES BOT ------------------
-
-def obtener_equity():
-    r = requests.get(f"{BASE_URL}/v2/account", headers=headers)
-    return float(r.json()["equity"])
-
-def obtener_posiciones():
-    r = requests.get(f"{BASE_URL}/v2/positions", headers=headers)
-    return r.json()
-
-def hay_posicion_en(simbolo):
-    posiciones = obtener_posiciones()
-    for p in posiciones:
-        if p["symbol"] == simbolo:
-            return True
-    return False
-
-def calcular_qty(precio, sl_pct):
-    equity = obtener_equity()
-    riesgo_total = equity * (riesgo_pct / 100)
-    riesgo_por_accion = precio * (sl_pct / 100)
-    qty = int(riesgo_total / riesgo_por_accion)
-    return max(qty, 1)
-
-def evaluar_y_operar(simbolo):
-
-    data_scan = yf.download(simbolo, period="5d", interval="15m")
-
-    if len(data_scan) < 30:
-        return
-
-    data_scan["EMA9"] = data_scan["Close"].ewm(span=9).mean()
-    data_scan["EMA21"] = data_scan["Close"].ewm(span=21).mean()
-
-    delta = data_scan["Close"].diff()
-    gain = delta.clip(lower=0)
-    loss = -delta.clip(upper=0)
-    rs = gain.rolling(14).mean() / loss.rolling(14).mean()
-    data_scan["RSI"] = 100 - (100 / (1 + rs))
-
-    ema9 = data_scan["EMA9"].iloc[-1]
-    ema21 = data_scan["EMA21"].iloc[-1]
-    rsi = data_scan["RSI"].iloc[-1]
-    precio = float(data_scan["Close"].iloc[-1])
-
-    if not hay_posicion_en(simbolo):
-
-        if ema9 > ema21 and rsi > 50:
-
-            qty_auto = calcular_qty(precio, stop_loss_pct)
-
-            st.warning(f"🤖 BUY detectado en {simbolo} | Qty: {qty_auto}")
-
-            order_data = {
-                "symbol": simbolo,
-                "qty": qty_auto,
-                "side": "buy",
-                "type": "market",
-                "time_in_force": "gtc",
-                "order_class": "bracket",
-                "take_profit": {
-                    "limit_price": round(precio * (1 + take_profit_pct/100), 2)
-                },
-                "stop_loss": {
-                    "stop_price": round(precio * (1 - stop_loss_pct/100), 2)
-                }
-            }
-
-            r = requests.post(
-                f"{BASE_URL}/v2/orders",
-                headers=headers,
-                json=order_data
+            order = MarketOrderRequest(
+                symbol=symbol,
+                notional=capital_to_use,
+                side=OrderSide.BUY,
+                type=OrderType.MARKET,
+                time_in_force=TimeInForce.DAY
             )
 
-            if r.status_code == 200:
-                st.success(f"🤖 BOT ejecutó BUY en {simbolo}")
-            else:
-                st.error(r.text)
+            trading_client.submit_order(order_data=order)
+            st.success("✅ Orden de COMPRA ejecutada")
 
-# ------------------ EJECUCIÓN ------------------
+        elif sell_signal:
 
-if bot_activo:
+            order = MarketOrderRequest(
+                symbol=symbol,
+                notional=capital_to_use,
+                side=OrderSide.SELL,
+                type=OrderType.MARKET,
+                time_in_force=TimeInForce.DAY
+            )
 
-    simbolos = [s.strip().upper() for s in lista_simbolos.split(",")]
+            trading_client.submit_order(order_data=order)
+            st.success("🔴 Orden de VENTA ejecutada")
 
-    for s in simbolos:
-        evaluar_y_operar(s)
+        else:
+            st.info("Sin señal clara")
 
+# ------------------ FONDO MODE ------------------
+
+st.subheader("💼 Fondo Mode")
+
+balance = float(account.equity)
+initial_balance = float(account.last_equity)
+
+profit = balance - initial_balance
+
+st.metric("Capital Total", f"${balance:,.2f}")
+st.metric("Ganancia/Pérdida", f"${profit:,.2f}")
+
+# ------------------ STOP LOSS & TAKE PROFIT SIMULADO ------------------
+
+last_price = data["Close"].iloc[-1]
+take_profit_price = last_price * (1 + take_profit_percent / 100)
+stop_loss_price = last_price * (1 - stop_loss_percent / 100)
+
+st.write(f"🎯 Take Profit: ${take_profit_price:,.2f}")
+st.write(f"🛑 Stop Loss: ${stop_loss_price:,.2f}")
+
+st.success("Sistema PRO cargado correctamente 🧠🔥")
