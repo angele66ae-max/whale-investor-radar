@@ -32,3 +32,25 @@ if data.empty:
 # FIX MultiIndex
 if isinstance(data.columns, pd.MultiIndex):
     data.columns = data.columns.get_level_values(0)
+# ---------------- INDICADORES ----------------
+data["EMA20"] = data["Close"].ewm(span=20).mean()
+data["EMA50"] = data["Close"].ewm(span=50).mean()
+data["Vol_MA"] = data["Volume"].rolling(20).mean()
+
+data["Whale"] = data["Volume"] > (data["Vol_MA"] * 2)
+
+# ---------------- GRÁFICO ----------------
+st.subheader(f"📊 {symbol} Price & Whale Activity")
+
+st.line_chart(data[["Close", "EMA20", "EMA50"]])
+
+if data["Whale"].iloc[-1]:
+    st.success("🐳 Whale activity detected!")
+else:
+    st.info("No whale activity right now.")
+
+# ---------------- BALANCE ----------------
+account = trading_client.get_account()
+buying_power = float(account.buying_power)
+
+st.metric("💰 Buying Power", f"${buying_power:,.2f}")
